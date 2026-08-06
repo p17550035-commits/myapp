@@ -16,17 +16,16 @@ jobs:
       ANDROID_BUILD_TOOLS: 33.0.2
       JAVA_VERSION: '17'
       GO_VERSION: '1.22'
-      ANDROID_HOME: /tmp/android-sdk
 
     steps:
       # -----------------------------------------------------------------
-      # 1��������������������������������������������������������������️��������������������������������������������������������������⃣ Checkout source
+      # 1������������������������������������������������������������������������������������������������������������������������������ Checkout source
       # -----------------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
       # -----------------------------------------------------------------
-      # 2��������������������������������������������������������������️��������������������������������������������������������������⃣ Set up JDK
+      # 2������������������������������������������������������������������������������������������������������������������������������ Set up JDK
       # -----------------------------------------------------------------
       - name: Set up JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
@@ -35,26 +34,24 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
 
       # -----------------------------------------------------------------
-      # 3��������������������������������������������������������������⃣ Install Android SDK command line tools
+      # 3������������������������������������������������������������������������������������������������������������������������������ Set up Android SDK
       # -----------------------------------------------------------------
-      - name: Install Android SDK command line tools
-        run: |
-          mkdir -p $ANDROID_HOME/cmdline-tools
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -o cmdline-tools.zip
-          unzip -q cmdline-tools.zip -d $ANDROID_HOME/cmdline-tools
-          echo "y" | $ANDROID_HOME/cmdline-tools/bin/sdkmanager --sdk_root=$ANDROID_HOME --install "platforms;android-${ANDROID_API_LEVEL}" "build-tools;${ANDROID_BUILD_TOOLS}" > /dev/null
-          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-          echo "PATH=$ANDROID_HOME/platform-tools:$ANDROID_HOME/build-tools/${ANDROID_BUILD_TOOLS}:$PATH" >> $GITHUB_ENV
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v2
+        with:
+          api-level: ${{ env.ANDROID_API_LEVEL }}
+          build-tools: ${{ env.ANDROID_BUILD_TOOLS }}
+          ndk-version: 25.1.8937393   # optional, can be omitted
 
       # -----------------------------------------------------------------
-      # 4��������������������������������������������������������������⃣ Accept licenses
+      # 4������������������������������������������������������������������������������������������������������������������������������ Ensure build-tools are in PATH
       # -----------------------------------------------------------------
-      - name: Accept Android SDK licenses
+      - name: Add build-tools to PATH
         run: |
-          yes | $ANDROID_HOME/cmdline-tools/bin/sdkmanager --sdk_root=$ANDROID_HOME --licenses
+          echo "$ANDROID_HOME/build-tools/${ANDROID_BUILD_TOOLS}" >> $GITHUB_PATH
 
       # -----------------------------------------------------------------
-      # 5��������������������������������������������������������������⃣ Set up Go
+      # 5������������������������������������������������������������������������������������������������������������������������������ Set up Go
       # -----------------------------------------------------------------
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -62,7 +59,7 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
 
       # -----------------------------------------------------------------
-      # 6��������������������������������������������������������������⃣ Build Go vault binary for android/arm64
+      # 6������������������������������������������������������������������������������������������������������������������������������ Build Go vault binary for android/arm64
       # -----------------------------------------------------------------
       - name: Build Go binary (android/arm64)
         run: |
@@ -74,7 +71,7 @@ jobs:
           cp vaultapp android/app/src/main/assets/
 
       # -----------------------------------------------------------------
-      # 7��������������������������������������������������������������⃣ Prepare a temporary test keystore (used for signing the APK)
+      # 7������������������������������������������������������������������������������������������������������������������������������ Prepare a temporary test keystore (used for signing the APK)
       # -----------------------------------------------------------------
       - name: Create test keystore
         run: |
@@ -88,7 +85,7 @@ jobs:
             -dname "CN=Test, O=Test, C=US"
 
       # -----------------------------------------------------------------
-      # 8��������������������������������������������������������������⃣ Compile Java sources (including generated R.java)
+      # 8������������������������������������������������������������������������������������������������������������������������������ Compile Java sources (including generated R.java)
       # -----------------------------------------------------------------
       - name: Compile Java
         run: |
@@ -97,43 +94,41 @@ jobs:
           # Create directories for generated sources and compiled classes
           mkdir -p android/app/obj android/app/gen
           # Generate R.java from resources
-          $ANDROID_HOME/build-tools/${ANDROID_BUILD_TOOLS}/aapt package \
-            -f -m -J android/app/gen -S android/app/src/main/res -M android/app/src/main/AndroidManifest.xml -I $PLATFORM_JAR
+          aapt package -f -m -J android/app/gen -S android/app/src/main/res -M android/app/src/main/AndroidManifest.xml -I $PLATFORM_JAR
           javac -bootclasspath $PLATFORM_JAR -d android/app/obj \
             $(find android/app/src/main/java -name "*.java") android/app/gen/com/example/myapp/R.java
 
       # -----------------------------------------------------------------
-      # 9��������������������������������������������������������������⃣ Convert .class → .dex
+      # 9������������������������������������������������������������������������������������������������������������������������������ Convert .class → .dex
       # -----------------------------------------------------------------
       - name: Dex conversion
         run: |
-          $ANDROID_HOME/build-tools/${ANDROID_BUILD_TOOLS}/dx --dex --output=classes.dex android/app/obj
+          dx --dex --output=classes.dex android/app/obj
 
       # -----------------------------------------------------------------
-      # ���������� �������� �������� ������ �������� ������ ������ ���� �������� ������ ������ ���� ������ ���� ���� �� �������� ������ ������ ���� ������ ���� ���� �� ������ ���� ���� �� ���� �� �� 🔟 Package resources (unsigned APK)
+      # ������������ ���������� �������� �������� �������� �������� �������� ���� ���������� �������� �������� �������� �������� �������� ���� ���������� �������� �������� �������� �������� ���� �������� ���� ���� ���� �� ���������� �������� ������ ������ ������ ������ ������ �� �������� ������ ������ ������ ������ ������ �� �������� ������ ������ ������ ������ �� ������ �� �� �� 🔟 Package resources (unsigned APK)
       # -----------------------------------------------------------------
       - name: Package unsigned APK
         run: |
-          $ANDROID_HOME/build-tools/${ANDROID_BUILD_TOOLS}/aapt package \
-            -f -M android/app/src/main/AndroidManifest.xml -S android/app/src/main/res -I $PLATFORM_JAR -F vault-app-unsigned.apk
+          aapt package -f -M android/app/src/main/AndroidManifest.xml -S android/app/src/main/res -I $PLATFORM_JAR -F vault-app-unsigned.apk
 
       # -----------------------------------------------------------------
-      # ���������� �������� �������� ������ �������� ������ ������ ���� �������� ������ ������ ���� ������ ���� ���� �� �������� ������ ������ ���� ������ ���� ���� �� ������ ���� ���� �� ���� �� �� 🔠 Add dex and assets to the unsigned APK
+      # ������������ ���������� �������� �������� �������� �������� �������� ���� ���������� �������� �������� �������� �������� �������� ���� ���������� �������� �������� �������� �������� ���� �������� ���� ���� ���� �� ���������� �������� ������ ������ ������ ������ ������ �� �������� ������ ������ ������ ������ ������ �� �������� ������ ������ ������ ������ �� ������ �� �� �� 🔠 Add dex and assets to the unsigned APK
       # -----------------------------------------------------------------
       - name: Add dex and assets
         run: |
           mkdir -p tmp
           cp classes.dex tmp/
           cp -r android/app/src/main/assets tmp/assets
-          $ANDROID_HOME/build-tools/${ANDROID_BUILD_TOOLS}/aapt add vault-app-unsigned.apk tmp/classes.dex
-          $ANDROID_HOME/build-tools/${ANDROID_BUILD_TOOLS}/aapt add vault-app-unsigned.apk -A tmp/assets
+          aapt add vault-app-unsigned.apk tmp/classes.dex
+          aapt add vault-app-unsigned.apk -A tmp/assets
 
       # -----------------------------------------------------------------
-      # ���������� �������� �������� ������ �������� ������ ������ ���� �������� ������ ������ ���� ������ ���� ���� �� �������� ������ ������ ���� ������ ���� ���� �� ������ ���� ���� �� ���� �� �� 🔡 Sign the APK with the test keystore
+      # ������������ ���������� �������� �������� �������� �������� �������� ���� ���������� �������� �������� �������� �������� �������� ���� ���������� �������� �������� �������� �������� ���� �������� ���� ���� ���� �� ���������� �������� ������ ������ ������ ������ ������ �� �������� ������ ������ ������ ������ ������ �� �������� ������ ������ ������ ������ �� ������ �� �� �� 🔡 Sign the APK with the test keystore
       # -----------------------------------------------------------------
       - name: Sign APK
         run: |
-          $ANDROID_HOME/build-tools/${ANDROID_BUILD_TOOLS}/apksigner sign \
+          apksigner sign \
             --ks test-key.jks \
             --ks-key-alias test-alias \
             --ks-pass pass:android \
@@ -141,14 +136,14 @@ jobs:
             vault-app-unsigned.apk
 
       # -----------------------------------------------------------------
-      # ���������� �������� �������� ������ �������� ������ ������ ���� �������� ������ ������ ���� ������ ���� ���� �� �������� ������ ������ ���� ������ ���� ���� �� ������ ���� ���� �� ���� �� �� 🔢 Zipalign (optional but recommended)
+      # ������������ ���������� �������� �������� �������� �������� �������� ���� ���������� �������� �������� �������� �������� �������� ���� ���������� �������� �������� �������� �������� ���� �������� ���� ���� ���� �� ���������� �������� ������ ������ ������ ������ ������ �� �������� ������ ������ ������ ������ ������ �� �������� ������ ������ ������ ������ �� ������ �� �� �� 🔢 Zipalign (optional but recommended)
       # -----------------------------------------------------------------
       - name: Zipalign APK
         run: |
-          $ANDROID_HOME/build-tools/${ANDROID_BUILD_TOOLS}/zipalign -p 4 vault-app-unsigned.apk vault-app.apk
+          zipalign -p 4 vault-app-unsigned.apk vault-app.apk
 
       # -----------------------------------------------------------------
-      # ���������� �������� �������� ������ �������� ������ ������ ���� �������� ������ ������ ���� ������ ���� ���� �� �������� ������ ������ ���� ������ ���� ���� �� ������ ���� ���� �� ���� �� �� 🔣 Upload the final APK as an artifact
+      # ������������ ���������� �������� �������� �������� �������� �������� ���� ���������� �������� �������� �������� �������� �������� ���� ���������� �������� �������� �������� �������� ���� �������� ���� ���� ���� �� ���������� �������� ������ ������ ������ ������ ������ �� �������� ������ ������ ������ ������ ������ �� �������� ������ ������ ������ ������ �� ������ �� �� �� 🔣 Upload the final APK as an artifact
       # -----------------------------------------------------------------
       - name: Upload APK
         uses: actions/upload-artifact@v4
