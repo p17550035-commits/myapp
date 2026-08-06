@@ -5,6 +5,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -124,6 +125,19 @@ func writePidFile() error {
 	return os.WriteFile(pidFile, []byte(strconv.Itoa(os.Getpid())), 0644)
 }
 
+// ---------- random helpers ----------
+func randIntn(n int) int {
+	if n <= 0 {
+		return 0
+	}
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	v := binary.BigEndian.Uint32(b)
+	return int(v) % n
+}
+
 // ---------- HTTP handlers ----------
 var vault []vaultEntry
 var key []byte
@@ -139,7 +153,7 @@ func generateHandler(w http.ResponseWriter, r *http.Request) {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+~`|}{[]:;?><,./-="
 	b := make([]byte, length)
 	for i := range b {
-		b[i] = charset[rand.Intn(len(charset))]
+		b[i] = charset[randIntn(len(charset))]
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"password": string(b)})
